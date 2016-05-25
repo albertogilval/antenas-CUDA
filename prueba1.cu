@@ -88,16 +88,24 @@ int main(int nargs, char ** vargs){
 	cudaMalloc( (void**) &mapad, sizeof(int) * (int) (rows*cols));
 
 	// Iniciar el mapa con el valor MAX INT
-//paralelizar
+	
 	tam = (int) ceil((float)(rows * cols)/tam);
 	dim3 bloqdimfunc1(128,1);
 	dim3 griddimfunc1(tam,1);
-
+	
+	/* Enviamos la matriz al dispositivo */
+	cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyHostToDevice);
+	
+	/* Llamamos a la funcion gpu_init */
 	gpu_init<<<griddimfunc1, bloqdimfunc1>>>(mapad,INT_MAX,rows*cols);
-	cudaDeviceSynchronize();//no se si es necesario (creo que no)
-	cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
-
-//
+	
+	/* Sincronizamos para estabilizar los datos */
+	cudaDeviceSynchronize();
+	
+	/* Recibimos la matriz de Device */
+	cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
+	
+	//
 	// 4. MOSTRAR RESULTADOS
 	//
 
@@ -106,8 +114,21 @@ int main(int nargs, char ** vargs){
 
 	// Salida
 	printf("Time: %f\n",tiempo);
-
+	
+	/* Comprobamos si se ha realizado bien la funcion */
+	
+	int error=0,z;
+	for(z=0;z<rows*cols;z++){
+		if(mapa[z]!=INT_MAX) error=1;
+	}
+	if(error) printf("Algo salio mal\n");
+	else printf ("Todo correcto\n");
+	
+	
+	/* Liberamos memoria */
 	cudaFree(mapad);
+	
+	/* Liberamos el dispositivo */
 	cudaResetDevice();
 	return 0;
 }
