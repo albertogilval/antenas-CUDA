@@ -235,7 +235,7 @@ int main(int nargs, char ** vargs){
 	dim3 griddim(tam,1);
 	gpu_init<<<griddim, bloqdim>>>(mapad,INT_MAX);
 	cudaDeviceSynchronize();//no se si es necesario (creo que no)
-	cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
+	cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
  
 /*	for(int i=0; i<(rows*cols); i++){
 		mapa[i] = INT_MAX;
