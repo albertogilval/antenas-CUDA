@@ -18,8 +18,7 @@ typedef struct {
  */
 #define m(y,x) mapa[ (y * cols) + x ]
 
-__global__ void gpu_init(int *mapad, int INT_MAX)
-{
+__global__ void gpu_init(int *mapad, int INT_MAX, int size){
 	/*Identificaciones necesarios*/
 	int IDX_Thread = threadIdx.x; //Identificacion del hilo en la dimension
 	int IDY_Thread = threadIdx.y; //Identificacion del hilo en la dimension y
@@ -32,6 +31,7 @@ __global__ void gpu_init(int *mapad, int INT_MAX)
 	int position = threads_per_block * ((IDY_block * shapeGrid_X)+IDX_block)+((IDY_Thread*blockDim.x)+IDX_Thread);
 
 	//inicializamos
+	if(position<size)
 	mapad[position] = INT_MAX;
 }
 
@@ -89,11 +89,11 @@ int main(int nargs, char ** vargs){
 
 	// Iniciar el mapa con el valor MAX INT
 //paralelizar
-	int tam = (((rows*cols)+512-1)/512);
-	dim3 bloqdim(512,1);
-	dim3 griddim(tam,1);
+	tam = (int) ceil((float)(rows * cols)/tam);
+	dim3 bloqdimfunc1(128,1);
+	dim3 griddimfunc1(tam,1);
 
-	gpu_init<<<griddim, bloqdim>>>(mapad,INT_MAX);
+	gpu_init<<<griddimfunc1, bloqdimfunc1>>>(mapad,INT_MAX,rows*cols);
 	cudaDeviceSynchronize();//no se si es necesario (creo que no)
 	cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
 
@@ -108,6 +108,7 @@ int main(int nargs, char ** vargs){
 	printf("Time: %f\n",tiempo);
 
 	cudaFree(mapad);
+	cudaResetDevice();
 	return 0;
 }
 
