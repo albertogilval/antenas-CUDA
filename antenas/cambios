@@ -1,0 +1,5 @@
+-creada una matriz para DEVICE (mapad)
+-creado un kernel para la inicializacion de la matriz (gpu_init)
+-copiado la matriz mapad a mapa (de DEVICE a HOST)
+
+comprobar tamaños del grid y bloque
