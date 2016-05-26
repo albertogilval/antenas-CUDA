@@ -37,6 +37,28 @@ __global__ void gpu_init(int *mapad, int max, int size){
 	if(position<size) mapad[position] = max;
 }
 
+void print_mapa(int * mapa, int rows, int cols, Antena * a){
+
+
+	if(rows > 50 || cols > 30){
+		printf("Mapa muy grande para imprimir\n");
+		return;
+	};
+
+
+	printf("Mapa [%d,%d]\n",rows,cols);
+	for(int i=0; i<rows; i++){
+		for(int j=0; j<cols; j++){
+
+			int val = m(i,j);
+			printf(" %6d ",val);
+
+		}
+		printf("\n");
+	}
+	printf("\n");
+}
+
 /**
  * Función principal
  */
@@ -84,7 +106,7 @@ int main(int nargs, char ** vargs){
 	double tiempo = cp_Wtime();
 
 	// Crear el mapa
-	int *mapa = (int *) malloc((size_t) (rows*cols) * sizeof(int) );
+	int * mapa = (int *) malloc((size_t) (rows*cols) * sizeof(int) );
 	
 	//Crear y reservar la memoria DEVICE
 	int *mapad;
@@ -107,7 +129,7 @@ int main(int nargs, char ** vargs){
 	
 	/* Recibimos la matriz de Device */
 	cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
-	
+	print_mapa(mapa,rows,cols,NULL);
 	//
 	// 4. MOSTRAR RESULTADOS
 	//
@@ -124,7 +146,7 @@ int main(int nargs, char ** vargs){
 	for(z=0;z<rows*cols;z++){
 		if(mapa[z]!=INT_MAX) error=1;
 	}
-	if(error) printf("Algo salio mal\n");
+	if(error==1) printf("Algo salio mal\n");
 	else printf ("Todo correcto\n");
 	
 	

@@ -1,10 +1,8 @@
 /**
  * Computación Paralela (curso 1516)
  *
- * Colocación de antenas
- * Versión secuencial
- *
- * @author Javier
+ * Alberto Gil
+ * Guillermo Cebrian
  */
 
 
@@ -12,13 +10,35 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <cuda.h>
-#include "iniciar.cu"
 #include <limits.h>
 
 
 // Include para las utilidades de computación paralela
 #include "cputils.h"
 
+/**
+ * Macro para acceder a las posiciones del mapa
+ */
+
+#define m(y,x) mapa[ (y * cols) + x ]
+
+__global__ void gpu_init(int *mapad, int max, int size){
+
+	/*Identificaciones necesarios*/
+	int IDX_Thread = threadIdx.x;	/*Identificacion del hilo en la dimension*/
+	int IDY_Thread = threadIdx.y;	/*Identificacion del hilo en la dimension y*/
+	int IDX_block =	blockIdx.x;	/*Identificacion del bloque en la dimension x*/
+	int IDY_block = blockIdx.y;	/*Identificacion del bloque en la dimension y */
+	int shapeGrid_X = gridDim.x; 	/*Numeros del bloques en la dimension */ 
+
+	int threads_per_block =	blockDim.x * blockDim.y; /* Numero de hilos por bloque (1 dimension) */
+
+	/*Formula para calcular la posicion*/	//Posicion del vector dependiendo del hilo y del bloque 
+	int position = threads_per_block * ((IDY_block * shapeGrid_X)+IDX_block)+((IDY_Thread*blockDim.x)+IDX_Thread);
+
+	//inicializamos
+	if(position<size) mapad[position] = max;
+}
 
 /**
  * Estructura antena
@@ -30,29 +50,9 @@ typedef struct {
 
 
 /**
- * Macro para acceder a las posiciones del mapa
- */
-#define m(y,x) mapa[ (y * cols) + x ]
-__global__ void gpuFunc_vecAdd(int *mapad, int INT_MAX)
-{
-	/*Identificaciones necesarios*/
-	int IDX_Thread = threadIdx.x; //Identificacion del hilo en la dimension
-	int IDY_Thread = threadIdx.y; //Identificacion del hilo en la dimension y
-	int IDX_block =	blockIdx.x; //Identificacion del bloque en la dimension x
-	int IDY_block = blockIdx.y; //Identificacion del bloque en la dimension y
-	int shapeGrid_X = gridDim.x; //Numeros del bloques en la dimension x
-	int threads_per_block =	blockDim.x * blockDim.y; //Numero de hilos por bloque (1 dimension)
-
-	/*Formula para calcular la posicion*/	//Posicion del vector dependiendo del hilo y del bloque 
-	int position = threads_per_block * ((IDY_block * shapeGrid_X)+IDX_block)+((IDY_Thread*blockDim.x)+IDX_Thread);
-
-	//inicializamos
-	mapad[position] = INT_MAX;
-}
-
-/**
  * Función de ayuda para imprimir el mapa
  */
+/*
 void print_mapa(int * mapa, int rows, int cols, Antena * a){
 
 
@@ -75,11 +75,33 @@ void print_mapa(int * mapa, int rows, int cols, Antena * a){
 				if(a != NULL && a->x == j && a->y == i){
 					printf( ANSI_COLOR_RED "   A"  ANSI_COLOR_RESET);
 				} else { 
-					printf( ANSI_COLOR_GREEN "   A"  ANSI_COLOR_RESET);
+					printf("A");
 				}
 			} else {
 				printf("%4d",val);
 			}
+		}
+		printf("\n");
+	}
+	printf("\n");
+}
+*/
+void print_mapa(int * mapa, int rows, int cols, Antena * a){
+
+
+	if(rows > 50 || cols > 30){
+		printf("Mapa muy grande para imprimir\n");
+		return;
+	};
+
+
+	printf("Mapa [%d,%d]\n",rows,cols);
+	for(int i=0; i<rows; i++){
+		for(int j=0; j<cols; j++){
+
+			int val = m(i,j);
+			printf(" %6d ",val);
+
 		}
 		printf("\n");
 	}
@@ -146,6 +168,7 @@ int calcular_max(int * mapa, int rows, int cols){
 /**
  * Calcular la posición de la nueva antena
  */
+
 Antena nueva_antena(int * mapa, int rows, int cols, int min){
 
 	for(int i=0; i<rows; i++){
@@ -197,7 +220,7 @@ int main(int nargs, char ** vargs){
 		   "y con %d antenas iniciales\n\n",rows,cols,distMax,nAntenas);
 
 	// Reservar memoria para las antenas
-	Antena * antenas = malloc(sizeof(Antena) * (size_t) nAntenas);
+	Antena * antenas = (Antena *) malloc(sizeof(Antena) * (size_t) nAntenas);
 	if(!antenas){
 		fprintf(stderr,"Error al reservar memoria para las antenas inicales\n");
 		return -1;
@@ -223,37 +246,40 @@ int main(int nargs, char ** vargs){
 	double tiempo = cp_Wtime();
 
 	// Crear el mapa
-	int * mapa = malloc((size_t) (rows*cols) * sizeof(int) );
+	int * mapa =  (int *) malloc((size_t) (rows*cols) * sizeof(int) );
+	
 	//Crear y reservar la memoria DEVICE
 	int *mapad;
 	cudaMalloc( (void**) &mapad, sizeof(int) * (int) (rows*cols));
 
 	// Iniciar el mapa con el valor MAX INT
-//paralelizar
-	int tam = (((rows*cols)+512-1)/512);
-	dim3 bloqdim(512,1);
-	dim3 griddim(tam,1);
-	gpu_init<<<griddim, bloqdim>>>(mapad,INT_MAX);
-	cudaDeviceSynchronize();//no se si es necesario (creo que no)
+
+	int size = rows*cols;	
+	int tam = (int) ceil( ((float)(rows * cols)) /size);
+	dim3 bloqdimfunc1(128,1);
+	dim3 griddimfunc1(tam,1);
+
+	/* Enviamos la matriz al dispositivo */
+	cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyHostToDevice);
+	
+	printf("%d INTMAX\n",INT_MAX);
+	/* Llamamos a la funcion gpu_init */
+	gpu_init<<<griddimfunc1, bloqdimfunc1>>>(mapad,INT_MAX,size);
+	
+	/* Sincronizamos para estabilizar los datos */
+	cudaDeviceSynchronize();
+	
+	/* Recibimos la matriz de Device */
 	cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
- 
-/*	for(int i=0; i<(rows*cols); i++){
-		mapa[i] = INT_MAX;
-	}*/
+
+	print_mapa(mapa,rows,cols,NULL);
 
 	// Colocar las antenas iniciales
 	for(int i=0; i<nAntenas; i++){
 		actualizar(mapa,rows,cols,antenas[i]);
 	}
-
-	// Transferencia a memoria Device
-	cudaMemcpy(mapad,mapa,sizeof(int) * (rows*cols),cudaMemcpyHostToDevice);
-
-	// Debug
-#ifdef DEBUG
+	
 	print_mapa(mapa,rows,cols,NULL);
-#endif
-
 
 	//
 	// 3. CALCULO DE LAS NUEVAS ANTENAS
@@ -265,7 +291,6 @@ int main(int nargs, char ** vargs){
 	while(1){
 
 		// Calcular el máximo
-//paralelizar
 		int max = calcular_max(mapa, rows, cols);
 
 		// Salimos si ya hemos cumplido el maximo
@@ -280,17 +305,20 @@ int main(int nargs, char ** vargs){
 
 	}
 
-	// Debug
-#ifdef DEBUG
 	print_mapa(mapa,rows,cols,NULL);
-#endif
 
 	//
 	// 4. MOSTRAR RESULTADOS
 	//
 
 	// tiempo
-	tiempo = cp_Wtime() - tiempo;	
+	tiempo = cp_Wtime() - tiempo;
+	
+	/* Liberamos memoria */
+	cudaFree(mapad);
+	
+	/* Liberamos el dispositivo */
+	cudaDeviceReset();
 
 	// Salida
 	printf("Result: %d\n",nuevas);
