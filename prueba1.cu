@@ -18,8 +18,7 @@ typedef struct {
  */
 #define m(y,x) mapa[ (y * cols) + x ]
 
-__global__ void gpu_init(int *mapad, int INT_MAX)
-{
+__global__ void gpu_init(int *mapad, int INT_MAX, int size){
 	/*Identificaciones necesarios*/
 	int IDX_Thread = threadIdx.x; //Identificacion del hilo en la dimension
 	int IDY_Thread = threadIdx.y; //Identificacion del hilo en la dimension y
@@ -32,6 +31,7 @@ __global__ void gpu_init(int *mapad, int INT_MAX)
 	int position = threads_per_block * ((IDY_block * shapeGrid_X)+IDX_block)+((IDY_Thread*blockDim.x)+IDX_Thread);
 
 	//inicializamos
+	if(position<size)
 	mapad[position] = INT_MAX;
 }
 
@@ -88,16 +88,24 @@ int main(int nargs, char ** vargs){
 	cudaMalloc( (void**) &mapad, sizeof(int) * (int) (rows*cols));
 
 	// Iniciar el mapa con el valor MAX INT
-//paralelizar
-	int tam = (((rows*cols)+512-1)/512);
-	dim3 bloqdim(512,1);
-	dim3 griddim(tam,1);
-
-	gpu_init<<<griddim, bloqdim>>>(mapad,INT_MAX);
-	cudaDeviceSynchronize();//no se si es necesario (creo que no)
-	cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
-
-//
+	
+	tam = (int) ceil((float)(rows * cols)/tam);
+	dim3 bloqdimfunc1(128,1);
+	dim3 griddimfunc1(tam,1);
+	
+	/* Enviamos la matriz al dispositivo */
+	cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyHostToDevice);
+	
+	/* Llamamos a la funcion gpu_init */
+	gpu_init<<<griddimfunc1, bloqdimfunc1>>>(mapad,INT_MAX,rows*cols);
+	
+	/* Sincronizamos para estabilizar los datos */
+	cudaDeviceSynchronize();
+	
+	/* Recibimos la matriz de Device */
+	cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
+	
+	//
 	// 4. MOSTRAR RESULTADOS
 	//
 
@@ -106,8 +114,22 @@ int main(int nargs, char ** vargs){
 
 	// Salida
 	printf("Time: %f\n",tiempo);
-
+	
+	/* Comprobamos si se ha realizado bien la funcion */
+	
+	int error=0,z;
+	for(z=0;z<rows*cols;z++){
+		if(mapa[z]!=INT_MAX) error=1;
+	}
+	if(error) printf("Algo salio mal\n");
+	else printf ("Todo correcto\n");
+	
+	
+	/* Liberamos memoria */
 	cudaFree(mapad);
+	
+	/* Liberamos el dispositivo */
+	cudaResetDevice();
 	return 0;
 }
 
