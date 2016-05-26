@@ -17,10 +17,25 @@
 #include "cputils.h"
 
 /**
+ * Estructura antena
+ */
+typedef struct {
+	int y;
+	int x;
+} Antena;
+
+/**
  * Macro para acceder a las posiciones del mapa
  */
 
 #define m(y,x) mapa[ (y * cols) + x ]
+
+/**
+ * Definimos el tamaño de bloque
+ */
+#define TAMBLOCK 128
+
+/* Funcion que inicializa la matriz al valor maximo */
 
 __global__ void gpu_init(int *mapad, int max, int size){
 
@@ -40,52 +55,36 @@ __global__ void gpu_init(int *mapad, int max, int size){
 	if(position<size) mapad[position] = max;
 }
 
-/**
- * Estructura antena
- */
-typedef struct {
-	int y;
-	int x;
-} Antena;
+/* Actualiza el mapa despues de colocar una antena*/
 
+__global__ void gpu_actualizar(int *mapad, int rows, int cols, Antena antena, int size)
+{
+	int IDX_Thread = threadIdx.x; 
+	int IDY_Thread = threadIdx.y;
+	int IDX_block =	blockIdx.x;
+	int IDY_block =	blockIdx.y;
+	int shapeGrid_X = gridDim.x;
+	int threads_per_block =	blockDim.x * blockDim.y;
+	int position = threads_per_block * ((IDY_block * shapeGrid_X)+IDX_block)+((IDY_Thread*blockDim.x)+IDX_Thread);
+
+	if(position<size)
+	{
+		int x,y;
+		y=(int)position/cols;
+		x=position-y*rows;
+		int dist = abs(antena.x -x) + abs(antena.y - y);
+		int nuevadist = dist*dist;
+		if(nuevadist<mapad[position])
+		{
+			mapad[position] = nuevadist;
+		}
+	}
+}
 
 /**
  * Función de ayuda para imprimir el mapa
  */
-/*
-void print_mapa(int * mapa, int rows, int cols, Antena * a){
 
-
-	if(rows > 50 || cols > 30){
-		printf("Mapa muy grande para imprimir\n");
-		return;
-	};
-
-	#define ANSI_COLOR_RED     "\x1b[31m"
-	#define ANSI_COLOR_GREEN   "\x1b[32m"
-	#define ANSI_COLOR_RESET   "\x1b[0m"
-
-	printf("Mapa [%d,%d]\n",rows,cols);
-	for(int i=0; i<rows; i++){
-		for(int j=0; j<cols; j++){
-
-			int val = m(i,j);
-
-			if(val == 0){
-				if(a != NULL && a->x == j && a->y == i){
-					printf( ANSI_COLOR_RED "   A"  ANSI_COLOR_RESET);
-				} else { 
-					printf("A");
-				}
-			} else {
-				printf("%4d",val);
-			}
-		}
-		printf("\n");
-	}
-	printf("\n");
-}
-*/
 void print_mapa(int * mapa, int rows, int cols, Antena * a){
 
 
@@ -107,42 +106,6 @@ void print_mapa(int * mapa, int rows, int cols, Antena * a){
 	}
 	printf("\n");
 }
-
-
-
-/**
- * Distancia de una antena a un punto (y,x)
- * @note Es el cuadrado de la distancia para tener más carga
- */
-int manhattan(Antena a, int y, int x){
-
-	int dist = abs(a.x -x) + abs(a.y - y);
-	return dist * dist;
-}
-
-
-
-/**
- * Actualizar el mapa con la nueva antena
- */
-void actualizar(int * mapa, int rows, int cols, Antena antena){
-
-	m(antena.y,antena.x) = 0;
-
-	for(int i=0; i<rows; i++){
-		for(int j=0; j<cols; j++){
-
-			int nuevadist = manhattan(antena,i,j);
-
-			if(nuevadist < m(i,j)){
-				m(i,j) = nuevadist;
-			}
-
-		} // j
-	} // i
-}
-
-
 
 /**
  * Calcular la distancia máxima en el mapa
@@ -255,31 +218,39 @@ int main(int nargs, char ** vargs){
 	// Iniciar el mapa con el valor MAX INT
 
 	int size = rows*cols;	
-	int tam = (int) ceil( ((float)(rows * cols)) /size);
-	dim3 bloqdimfunc1(128,1);
-	dim3 griddimfunc1(tam,1);
+	int tam = (int) ceil((float)(size /TAMBLOCK))+1;
+	printf("Tam: %d\n",tam);
+	dim3 bloqdimmatriz(TAMBLOCK,1);
+	dim3 griddimmatriz(tam,1);
 
 	/* Enviamos la matriz al dispositivo */
 	cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyHostToDevice);
 	
-	printf("%d INTMAX\n",INT_MAX);
 	/* Llamamos a la funcion gpu_init */
-	gpu_init<<<griddimfunc1, bloqdimfunc1>>>(mapad,INT_MAX,size);
+	gpu_init<<<griddimmatriz, bloqdimmatriz>>>(mapad,INT_MAX,size);
 	
 	/* Sincronizamos para estabilizar los datos */
 	cudaDeviceSynchronize();
-	
-	/* Recibimos la matriz de Device */
-	cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
 
+// Debug
+	/* Recibimos la matriz de Device para imprimirla */
+	cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
 	print_mapa(mapa,rows,cols,NULL);
+// Debug fin
 
 	// Colocar las antenas iniciales
 	for(int i=0; i<nAntenas; i++){
-		actualizar(mapa,rows,cols,antenas[i]);
+		gpu_actualizar<<<griddimmatriz,bloqdimmatriz>>>(mapad, rows,  cols,  antenas[i], size);
 	}
-	
+
+	/* Recibimos la matriz de Device */
+	cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
+
+// Debug ini
+
 	print_mapa(mapa,rows,cols,NULL);
+
+// Debug fin
 
 	//
 	// 3. CALCULO DE LAS NUEVAS ANTENAS
@@ -301,11 +272,15 @@ int main(int nargs, char ** vargs){
 		
 		// Calculo de la nueva antena y actualización del mapa
 		Antena antena = nueva_antena(mapa, rows, cols, max);
-		actualizar(mapa,rows,cols,antena);
+		// Enviamos la matriz al device para que se actualice
+		cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyHostToDevice);
+		// Llamamos a la funcion
+		gpu_actualizar<<<griddimmatriz,bloqdimmatriz>>>(mapad, rows,  cols,  antena, size);
+		// De momento recibimos la matriz por que hay que calcular el maximo
+		cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
 
 	}
 
-	print_mapa(mapa,rows,cols,NULL);
 
 	//
 	// 4. MOSTRAR RESULTADOS
@@ -313,7 +288,7 @@ int main(int nargs, char ** vargs){
 
 	// tiempo
 	tiempo = cp_Wtime() - tiempo;
-	
+	print_mapa(mapa,rows,cols,NULL);
 	/* Liberamos memoria */
 	cudaFree(mapad);
 	
