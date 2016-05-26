@@ -72,7 +72,8 @@ int main()
 
 	cudaMemcpy(vd,v,sizeof(int) * size,cudaMemcpyHostToDevice);
 	
-	int max = reduce(vd,v, size,bd,gd);
+	int max = reduce(vd,v, size,bd,gd);//despues de esta funcion hay que copiar el valor del vector del host en el vector device porque se descoloca
+	cudaMemcpy(vd,v,sizeof(int) * size,cudaMemcpyHostToDevice);
 	printf("%d\n",max);
 
 	cudaFree(vd);
