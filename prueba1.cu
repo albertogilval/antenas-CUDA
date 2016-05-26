@@ -18,21 +18,23 @@ typedef struct {
  */
 #define m(y,x) mapa[ (y * cols) + x ]
 
-__global__ void gpu_init(int *mapad, int INT_MAX, int size){
+#define currentGPU 0
+
+__global__ void gpu_init(int *mapad, int max, int size){
 	/*Identificaciones necesarios*/
-	int IDX_Thread = threadIdx.x; //Identificacion del hilo en la dimension
-	int IDY_Thread = threadIdx.y; //Identificacion del hilo en la dimension y
-	int IDX_block =	blockIdx.x; //Identificacion del bloque en la dimension x
-	int IDY_block = blockIdx.y; //Identificacion del bloque en la dimension y
-	int shapeGrid_X = gridDim.x; //Numeros del bloques en la dimension x
-	int threads_per_block =	blockDim.x * blockDim.y; //Numero de hilos por bloque (1 dimension)
+	int IDX_Thread = threadIdx.x;	/*Identificacion del hilo en la dimension*/
+	int IDY_Thread = threadIdx.y;	/*Identificacion del hilo en la dimension y*/
+	int IDX_block =	blockIdx.x;	/*Identificacion del bloque en la dimension x*/
+	int IDY_block = blockIdx.y;	/*Identificacion del bloque en la dimension y */
+	int shapeGrid_X = gridDim.x; 	/*Numeros del bloques en la dimension */ 
+
+	int threads_per_block =	blockDim.x * blockDim.y; /* Numero de hilos por bloque (1 dimension) */
 
 	/*Formula para calcular la posicion*/	//Posicion del vector dependiendo del hilo y del bloque 
 	int position = threads_per_block * ((IDY_block * shapeGrid_X)+IDX_block)+((IDY_Thread*blockDim.x)+IDX_Thread);
 
 	//inicializamos
-	if(position<size)
-	mapad[position] = INT_MAX;
+	if(position<size) mapad[position] = max;
 }
 
 /**
@@ -82,22 +84,23 @@ int main(int nargs, char ** vargs){
 	double tiempo = cp_Wtime();
 
 	// Crear el mapa
-	int * mapa = malloc((size_t) (rows*cols) * sizeof(int) );
+	int *mapa = (int *) malloc((size_t) (rows*cols) * sizeof(int) );
+	
 	//Crear y reservar la memoria DEVICE
 	int *mapad;
 	cudaMalloc( (void**) &mapad, sizeof(int) * (int) (rows*cols));
 
 	// Iniciar el mapa con el valor MAX INT
 	
-	tam = (int) ceil((float)(rows * cols)/tam);
+	int size = rows*cols;	
+	int tam = (int) ceil( ((float)(rows * cols)) /size);
 	dim3 bloqdimfunc1(128,1);
 	dim3 griddimfunc1(tam,1);
-	
 	/* Enviamos la matriz al dispositivo */
 	cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyHostToDevice);
 	
 	/* Llamamos a la funcion gpu_init */
-	gpu_init<<<griddimfunc1, bloqdimfunc1>>>(mapad,INT_MAX,rows*cols);
+	gpu_init<<<griddimfunc1, bloqdimfunc1>>>(mapad,INT_MAX,size);
 	
 	/* Sincronizamos para estabilizar los datos */
 	cudaDeviceSynchronize();
@@ -129,8 +132,7 @@ int main(int nargs, char ** vargs){
 	cudaFree(mapad);
 	
 	/* Liberamos el dispositivo */
-	cudaResetDevice();
+	cudaDeviceReset();
 	return 0;
 }
-
 
