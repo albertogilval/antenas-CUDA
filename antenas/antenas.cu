@@ -108,6 +108,16 @@ __global__ void gpu_nueva_antena(int *mapad, int rows, int cols, int max, Antena
 			}
 		printf("Antena [%d,%d]\n",antenaD.x,antenaD.y);
 	}
+	/*
+	__shared__ int pos = size;
+	int x,y;
+	y=(int)idglobal/cols;
+	x=idglobal-y*cols;
+	if(mapad[position]==max && position<pos){
+		pos=position;
+		antenaD = (Antena){x,y};
+	}
+	*/
 }
 
 /**
