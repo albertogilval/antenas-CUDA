@@ -33,7 +33,7 @@ int reduce(int *c, int *v, int size,dim3 bd,dim3 gd)
 {
 	int t=size;
 	
-		while(t!=0){
+		while(t!=1){
 		
 			gpu_reduce<<<gd,bd>>>(c,t);
 			cudaDeviceSynchronize();
