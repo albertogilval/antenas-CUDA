@@ -71,13 +71,38 @@ __global__ void gpu_actualizar(int *mapad, int rows, int cols, Antena antena, in
 	{
 		int x,y;
 		y=(int)position/cols;
-		x=position-y*rows;
+		x=position-y*cols;
 		int dist = abs(antena.x -x) + abs(antena.y - y);
 		int nuevadist = dist*dist;
 		if(nuevadist<mapad[position])
 		{
 			mapad[position] = nuevadist;
 		}
+	}
+}
+
+#define m(y,x) mapa[ (y * cols) + x ]
+
+__global__ void gpu_nueva_antena(int *mapad, int rows, int cols, int max, Antena antena)
+{
+	int IDX_Thread = threadIdx.x; 
+	int IDY_Thread = threadIdx.y;
+	int IDX_block =	blockIdx.x;
+	int IDY_block =	blockIdx.y;
+	int shapeGrid_X = gridDim.x;
+	int threads_per_block =	blockDim.x * blockDim.y;
+
+	int position = threads_per_block * ((IDY_block * shapeGrid_X)+IDX_block)+((IDY_Thread*blockDim.x)+IDX_Thread);
+	int idglobal = ((gridDim.x*gridDim.y)*(IDY_block * shapeGrid_X)+IDX_block)+((IDY_Thread*blockDim.x)+IDX_Thread);
+	int size = rows*cols;	
+	printf("position: %d\t idglobal: %d\n",position,idglobal);
+	if(position<size)
+	{
+		int x,y;
+		y=(int)idglobal/cols;
+		x=idglobal-y*cols;
+		if(mapad[position]==max) antena = {x,y};
+
 	}
 }
 
@@ -214,7 +239,9 @@ int main(int nargs, char ** vargs){
 	//Crear y reservar la memoria DEVICE
 	int *mapad;
 	cudaMalloc( (void**) &mapad, sizeof(int) * (int) (rows*cols));
-
+	
+	Antena antenad;
+	cudaMalloc( (void**) &antenad, sizeof(Antena));
 	// Iniciar el mapa con el valor MAX INT
 
 	int size = rows*cols;	
@@ -271,11 +298,18 @@ int main(int nargs, char ** vargs){
 		nuevas++;
 		
 		// Calculo de la nueva antena y actualización del mapa
-		Antena antena = nueva_antena(mapa, rows, cols, max);
+		// Creamos antena host	
+		Antena antena;
+		//Llamamos a la funcion mandando la antenaD
+		gpu_nueva_antena<<<griddimmatriz,bloqdimmatriz>>>(mapad,rows,cols,max,antenaD)
+		// Recibimos antenaD y la guardamos en antena
+		//cudaMemcpy(antena, antenaD, sizeof(Antena),cudaMemcpyDeviceToHost);
+		cudaDeviceSynchronize();
+
 		// Enviamos la matriz al device para que se actualice
-		cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyHostToDevice);
+		//cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyHostToDevice);
 		// Llamamos a la funcion
-		gpu_actualizar<<<griddimmatriz,bloqdimmatriz>>>(mapad, rows,  cols,  antena, size);
+		gpu_actualizar<<<griddimmatriz,bloqdimmatriz>>>(mapad, rows,  cols,  antenaD, size);
 		// De momento recibimos la matriz por que hay que calcular el maximo
 		cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
 
