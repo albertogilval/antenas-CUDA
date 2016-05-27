@@ -81,10 +81,10 @@ __global__ void gpu_actualizar(int *mapad, int rows, int cols, Antena antena, in
 	}
 }
 
-#define m(y,x) mapa[ (y * cols) + x ]
 
-__global__ void gpu_nueva_antena(int *mapad, int rows, int cols, int max, Antena antena)
+__global__ void gpu_nueva_antena(int *mapad, int rows, int cols, int max, Antena antenaD)
 {
+	__shared__ bool find = 0;
 	int IDX_Thread = threadIdx.x; 
 	int IDY_Thread = threadIdx.y;
 	int IDX_block =	blockIdx.x;
@@ -95,14 +95,18 @@ __global__ void gpu_nueva_antena(int *mapad, int rows, int cols, int max, Antena
 	int position = threads_per_block * ((IDY_block * shapeGrid_X)+IDX_block)+((IDY_Thread*blockDim.x)+IDX_Thread);
 	int idglobal = ((gridDim.x*gridDim.y)*(IDY_block * shapeGrid_X)+IDX_block)+((IDY_Thread*blockDim.x)+IDX_Thread);
 	int size = rows*cols;	
-	printf("position: %d\t idglobal: %d\n",position,idglobal);
-	if(position<size)
+	
+	if(position<size && find==0)
 	{
+		//printf("position: %d\t idglobal: %d\n",position,idglobal);
 		int x,y;
 		y=(int)idglobal/cols;
 		x=idglobal-y*cols;
-		if(mapad[position]==max) antena = {x,y};
-
+		if(mapad[position]==max) {
+			antenaD = (Antena){x,y};
+			find=1;
+			}
+		printf("Antena [%d,%d]\n",antenaD.x,antenaD.y);
 	}
 }
 
@@ -240,8 +244,8 @@ int main(int nargs, char ** vargs){
 	int *mapad;
 	cudaMalloc( (void**) &mapad, sizeof(int) * (int) (rows*cols));
 	
-	Antena antenad;
-	cudaMalloc( (void**) &antenad, sizeof(Antena));
+	Antena antenaD;
+	cudaMalloc( (void**) &antenaD, sizeof(Antena));
 	// Iniciar el mapa con el valor MAX INT
 
 	int size = rows*cols;	
@@ -262,6 +266,7 @@ int main(int nargs, char ** vargs){
 // Debug
 	/* Recibimos la matriz de Device para imprimirla */
 	cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
+	printf("Matriz inicializada\n");
 	print_mapa(mapa,rows,cols,NULL);
 // Debug fin
 
@@ -272,6 +277,7 @@ int main(int nargs, char ** vargs){
 
 	/* Recibimos la matriz de Device */
 	cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
+	printf("Mapa con antenas iniciales\n");
 
 // Debug ini
 
@@ -290,28 +296,29 @@ int main(int nargs, char ** vargs){
 
 		// Calcular el máximo
 		int max = calcular_max(mapa, rows, cols);
-
+		printf("Max: %d distMax: %d\n",max,distMax);
 		// Salimos si ya hemos cumplido el maximo
 		if (max <= distMax) break;	
 		
 		// Incrementamos el contador
 		nuevas++;
-		
+print_mapa(mapa,rows,cols,NULL);
 		// Calculo de la nueva antena y actualización del mapa
 		// Creamos antena host	
 		Antena antena;
 		//Llamamos a la funcion mandando la antenaD
-		gpu_nueva_antena<<<griddimmatriz,bloqdimmatriz>>>(mapad,rows,cols,max,antenaD)
+		gpu_nueva_antena<<<griddimmatriz,bloqdimmatriz>>>(mapad,rows,cols,max,antena);
 		// Recibimos antenaD y la guardamos en antena
-		//cudaMemcpy(antena, antenaD, sizeof(Antena),cudaMemcpyDeviceToHost);
 		cudaDeviceSynchronize();
+		//printf("Antena : [%d,%d]\n",antena.y,antena.x)
 
 		// Enviamos la matriz al device para que se actualice
 		//cudaMemcpy(mapad, mapa, sizeof(int) * (rows*cols),cudaMemcpyHostToDevice);
 		// Llamamos a la funcion
-		gpu_actualizar<<<griddimmatriz,bloqdimmatriz>>>(mapad, rows,  cols,  antenaD, size);
+		gpu_actualizar<<<griddimmatriz,bloqdimmatriz>>>(mapad, rows,  cols,  antena, size);
 		// De momento recibimos la matriz por que hay que calcular el maximo
 		cudaMemcpy(mapa, mapad, sizeof(int) * (rows*cols),cudaMemcpyDeviceToHost);
+print_mapa(mapa,rows,cols,NULL);
 
 	}
 
@@ -322,6 +329,7 @@ int main(int nargs, char ** vargs){
 
 	// tiempo
 	tiempo = cp_Wtime() - tiempo;
+	printf("Mapa final\n");
 	print_mapa(mapa,rows,cols,NULL);
 	/* Liberamos memoria */
 	cudaFree(mapad);
